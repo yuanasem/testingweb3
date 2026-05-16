@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Login Dashboard - ECG Monitoring System</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body data-page="login">
+  <main class="auth-page">
+    <section class="auth-hero">
+      <div class="pill-status">
+        <span class="pulse-dot"></span>
+        ECG Monitoring System
+      </div>
+
+      <h1>Login dulu untuk masuk ke dashboard ECG.</h1>
+      <p>
+        Alur web ini dimulai dari halaman dashboard login. Setelah akun berhasil masuk,
+        user akan diarahkan ke halaman index yang berisi monitoring ECG real-time.
+      </p>
+
+      <div class="hero-feature-grid">
+        <div class="hero-feature red-card">
+          <strong>Login</strong>
+          <span>Masukkan akun dummy atau akun baru.</span>
+        </div>
+        <div class="hero-feature yellow-card">
+          <strong>Validasi</strong>
+          <span>Email dan password dicek otomatis.</span>
+        </div>
+        <div class="hero-feature green-card">
+          <strong>Session</strong>
+          <span>Token disimpan di browser.</span>
+        </div>
+        <div class="hero-feature blue-card">
+          <strong>Index</strong>
+          <span>Masuk ke dashboard ECG utama.</span>
+        </div>
+      </div>
+
+      <div class="mini-ecg-card">
+        <svg viewBox="0 0 850 140" preserveAspectRatio="none" aria-hidden="true">
+          <path d="M0 76 H95 L122 76 L146 28 L172 112 L198 76 H285 L312 76 L338 48 L360 94 L385 76 H480 L506 76 L536 20 L566 120 L592 76 H680 L706 76 L730 52 L756 96 L782 76 H850"
+                fill="none" stroke="url(#ecgGradient)" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+          <defs>
+            <linearGradient id="ecgGradient" x1="0" y1="0" x2="850" y2="0">
+              <stop stop-color="#e63946"/>
+              <stop offset="0.34" stop-color="#f9c74f"/>
+              <stop offset="0.67" stop-color="#2a9d8f"/>
+              <stop offset="1" stop-color="#2563eb"/>
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+    </section>
+
+    <section class="auth-card">
+      <div class="brand">
+        <div class="brand-logo">♥</div>
+        <div>
+          <h2 id="authTitle">Login Dashboard</h2>
+          <p>Masuk untuk membuka halaman index.</p>
+        </div>
+      </div>
+
+      <div class="demo-account">
+        <p>Akun dummy siap pakai:</p>
+        <strong>demo@ecg.com</strong>
+        <span>Password: demo123</span>
+      </div>
+
+      <div class="auth-tabs">
+        <button type="button" id="loginTab" class="auth-tab active">Login</button>
+        <button type="button" id="signupTab" class="auth-tab">Sign Up</button>
+      </div>
+
+      <form id="authForm">
+        <div id="usernameGroup" class="form-group hidden">
+          <label for="username">Username</label>
+          <input type="text" id="username" placeholder="Masukkan username" autocomplete="name" />
+        </div>
+
+        <div class="form-group">
+          <label for="email">Email</label>
+          <input type="email" id="email" placeholder="Masukkan email" autocomplete="email" required />
+        </div>
+
+        <div class="form-group">
+          <label for="password">Password</label>
+          <div class="password-wrap">
+            <input type="password" id="password" placeholder="Minimal 6 karakter" autocomplete="current-password" required />
+            <button type="button" id="togglePassword" class="toggle-password">Lihat</button>
+          </div>
+        </div>
+
+        <button type="submit" id="authBtn" class="btn-primary">Masuk ke Index</button>
+        <button type="button" id="demoLoginBtn" class="btn-demo">Masuk sebagai Demo</button>
+
+        <div id="authMessage" class="auth-message"></div>
+      </form>
+
+      <p class="auth-note">
+        Setelah login berhasil, halaman akan otomatis berpindah ke <b>index.html</b>.
+      </p>
+    </section>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>

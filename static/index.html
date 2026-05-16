@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Index - ECG Real-time Dashboard</title>
+  <link rel="stylesheet" href="style.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/paho-mqtt/1.1.0/paho-mqtt.min.js"></script>
+</head>
+<body data-page="index">
+  <main class="dashboard-page">
+    <header class="dashboard-header">
+      <div class="title-section">
+        <div class="brand-logo small">♥</div>
+        <div>
+          <h2>Index ECG Monitoring</h2>
+          <p id="welcomeUser">Dashboard real-time ECG</p>
+        </div>
+      </div>
+
+      <div class="header-actions">
+        <span id="conn-status" class="status-badge connecting">Connecting...</span>
+        <button class="btn-outline" id="logoutBtn" type="button">Logout</button>
+      </div>
+    </header>
+
+    <section class="summary-grid">
+      <div class="summary-card red-card">
+        <span>Halaman</span>
+        <strong>Index</strong>
+        <p>Halaman utama setelah login.</p>
+      </div>
+      <div class="summary-card yellow-card">
+        <span>Record</span>
+        <strong id="recordStatus">Standby</strong>
+        <p>Status perekaman data ECG.</p>
+      </div>
+      <div class="summary-card green-card">
+        <span>Data Point</span>
+        <strong id="dataCount">0</strong>
+        <p>Total data yang direkam.</p>
+      </div>
+      <div class="summary-card blue-card">
+        <span>Source</span>
+        <strong id="dataSource">MQTT</strong>
+        <p>Sumber data dashboard.</p>
+      </div>
+    </section>
+
+    <section class="dashboard-controls">
+      <button class="btn-record" id="recordBtn">Mulai Rekam</button>
+      <button class="btn-export" id="exportBtn">Download Excel (CSV)</button>
+    </section>
+
+    <section class="grid-container">
+      <article class="card full-width">
+        <div class="card-header">
+          <div>
+            <h3>Live Leads (I, II, III)</h3>
+            <span class="info">Data real-time dari sensor ESP32 atau dummy stream saat broker belum terhubung.</span>
+          </div>
+        </div>
+
+        <div class="chart-wrapper ecg-grid">
+          <canvas id="ecgChartMain"></canvas>
+        </div>
+      </article>
+
+      <article class="card">
+        <div class="card-header">
+          <div>
+            <h3>Augmented Leads</h3>
+            <span class="info">Kalkulasi otomatis: aVR, aVL, dan aVF.</span>
+          </div>
+        </div>
+
+        <div class="chart-wrapper soft-grid">
+          <canvas id="ecgChartAug"></canvas>
+        </div>
+      </article>
+
+      <article class="card">
+        <div class="card-header">
+          <div>
+            <h3>Log Aktivitas</h3>
+            <span class="info">Riwayat koneksi, rekaman, dan export data.</span>
+          </div>
+        </div>
+
+        <div id="recordLog" class="log-container">
+          <p>Menunggu koneksi sensor...</p>
+        </div>
+      </article>
+    </section>
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>
