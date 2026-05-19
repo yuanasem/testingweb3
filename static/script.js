@@ -1,384 +1,380 @@
-// =====================================================
-// REVISI TOTAL KONEKTIVITAS: HIVEMQ & MONGODB ATLAS API
-// =====================================================
-
-const TOKEN_KEY = "token";
-const USER_KEY = "ecg_current_user";
-
-// Konfigurasi Kritis Broker HiveMQ Cloud
+// ============================================================================
+// 1. CONFIGURATION & GLOBAL VARIABLES
+// ============================================================================
 const MQTT_CONFIG = {
-  broker: "b12be20128b4431fa7257c750cb205d6.s1.eu.hivemq.cloud", 
-  port: 8884,                                            // PERBAIKAN: Port Secure WebSocket HiveMQ Cloud Free Tier
-  path: "/mqtt",
-  useSSL: true,
-  username: "monitoring_ecg",                           // PERBAIKAN: Wajib isi Username dari menu Access Management (Sama dengan ESP32)
-  password: "PasswordEcg123",                           // PERBAIKAN: Wajib isi Password dari menu Access Management (Sama dengan ESP32)
-  topics: ["esp32/lead1", "esp32/lead2", "esp32/lead3"]
+  server: "b12be20128b4431fa7257c750cb205d6.s1.eu.hivemq.cloud",
+  port: 8884, // Port WebSockets dengan enkripsi SSL/TLS di HiveMQ Cloud
+  user: "monitoring_ecg",
+  password: "PasswordEcg123",
+  topic: "esp32/lead1"
 };
 
-const USE_DUMMY_STREAM_WHEN_MQTT_FAILS = true;
+let mqttClient = null;
+let mainChart = null;
+let augChart = null;
 
-function setSession(token, user) {
-  localStorage.setItem(TOKEN_KEY, token);
-  localStorage.setItem(USER_KEY, JSON.stringify(user));
-}
+// State Manajemen Perekaman Data
+let isRecording = false;
+let recordedData = [];
+let dataCount = 0;
+const MAX_CHART_POINTS = 100; // Batas jumlah titik pada layar rolling window
 
-function getSessionUser() {
-  return JSON.parse(localStorage.getItem(USER_KEY) || "null");
-}
+// ============================================================================
+// 2. AUTHENTICATION & SESSION MANAGEMENT (dashboard.html & index.html)
+// ============================================================================
+document.addEventListener("DOMContentLoaded", () => {
+  const currentPage = document.body.getAttribute("data-page");
 
-function logout() {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(USER_KEY);
-  window.location.href = "dashboard.html";
-}
+  if (currentPage === "login") {
+    initLoginPage();
+  } else if (currentPage === "index") {
+    checkSession();
+    initDashboardPage();
+  }
+});
 
-function redirectToIndex() {
-  window.location.href = "index.html";
-}
-
-function redirectToDashboardLogin() {
-  window.location.href = "dashboard.html";
-}
-
-function showAuthMessage(type, message) {
-  const box = document.getElementById("authMessage");
-  if (!box) return;
-  box.className = "auth-message show " + type;
-  box.textContent = message;
+function checkSession() {
+  const session = localStorage.getItem("ecg_session");
+  if (!session) {
+    window.location.href = "dashboard.html";
+  } else {
+    setTimeout(() => {
+      const welcomeText = document.getElementById("welcomeUser");
+      if (welcomeText) welcomeText.innerText = `Dashboard real-time ECG (${session})`;
+    }, 100);
+  }
 }
 
 function initLoginPage() {
-  if (localStorage.getItem(TOKEN_KEY)) {
-    redirectToIndex();
-    return;
-  }
-
-  const authForm = document.getElementById("authForm");
-  const authTitle = document.getElementById("authTitle");
-  const authBtn = document.getElementById("authBtn");
   const loginTab = document.getElementById("loginTab");
   const signupTab = document.getElementById("signupTab");
   const usernameGroup = document.getElementById("usernameGroup");
-  const usernameInput = document.getElementById("username");
-  const emailInput = document.getElementById("email");
-  const passwordInput = document.getElementById("password");
+  const authTitle = document.getElementById("authTitle");
+  const authBtn = document.getElementById("authBtn");
+  const authForm = document.getElementById("authForm");
   const togglePassword = document.getElementById("togglePassword");
+  const passwordInput = document.getElementById("password");
   const demoLoginBtn = document.getElementById("demoLoginBtn");
+  const authMessage = document.getElementById("authMessage");
 
   let isLoginMode = true;
 
-  // Bersihkan nilai bawaan agar tidak tertukar data lama
-  emailInput.value = "";
-  passwordInput.value = "";
-
-  function setMode(loginMode) {
-    isLoginMode = loginMode;
-    loginTab.classList.toggle("active", isLoginMode);
-    signupTab.classList.toggle("active", !isLoginMode);
-    usernameGroup.classList.toggle("hidden", isLoginMode);
-    authTitle.textContent = isLoginMode ? "Login Dashboard" : "Sign Up Akun";
-    authBtn.textContent = isLoginMode ? "Masuk ke Index" : "Daftar Akun";
+  function showMessage(text, type) {
+    authMessage.textContent = text;
+    authMessage.className = `auth-message show ${type}`;
   }
 
-  loginTab.addEventListener("click", () => setMode(true));
-  signupTab.addEventListener("click", () => setMode(false));
+  loginTab.addEventListener("click", () => {
+    isLoginMode = true;
+    loginTab.classList.add("active");
+    signupTab.classList.remove("active");
+    usernameGroup.classList.add("hidden");
+    authTitle.innerText = "Login Dashboard";
+    authBtn.innerText = "Masuk ke Index";
+  });
+
+  signupTab.addEventListener("click", () => {
+    isLoginMode = false;
+    signupTab.classList.add("active");
+    loginTab.classList.remove("active");
+    usernameGroup.classList.remove("hidden");
+    authTitle.innerText = "Sign Up Akun Baru";
+    authBtn.innerText = "Daftar & Masuk";
+  });
 
   togglePassword.addEventListener("click", () => {
-    const visible = passwordInput.type === "text";
-    passwordInput.type = visible ? "password" : "text";
-    togglePassword.textContent = visible ? "Lihat" : "Sembunyi";
+    if (passwordInput.type === "password") {
+      passwordInput.type = "text";
+      togglePassword.innerText = "Sembunyi";
+    } else {
+      passwordInput.type = "password";
+      togglePassword.innerText = "Lihat";
+    }
   });
 
-  // Fitur Demo Bypass Terproteksi Lokal Sederhana
   demoLoginBtn.addEventListener("click", () => {
-    setSession("demo-token", { username: "Demo Guest", email: "demo@ecg.com" });
-    redirectToIndex();
+    localStorage.setItem("ecg_session", "Demo Account");
+    showMessage("Login Demo Sukses! Mengarahkan...", "success");
+    setTimeout(() => { window.location.href = "index.html"; }, 1200);
   });
 
-  authForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const email = emailInput.value.trim().toLowerCase();
+  authForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const email = document.getElementById("email").value;
     const password = passwordInput.value;
-    const username = usernameInput.value.trim();
 
-    if (!email || !password) {
-      showAuthMessage("error", "Email dan password wajib diisi.");
-      return;
-    }
-    if (password.length < 6) {
-      showAuthMessage("error", "Password minimal 6 karakter.");
-      return;
-    }
-
-    const endpoint = isLoginMode ? "/api/login" : "/api/signup";
-    const payload = isLoginMode ? { email, password } : { email, username, password };
-
-    try {
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-
-      const result = await response.json();
-
-      if (!response.ok || !result.success) {
-        showAuthMessage("error", result.error || "Terjadi kesalahan transmisi data.");
+    if (isLoginMode) {
+      if ((email === "demo@ecg.com" && password === "demo123") || password.length >= 6) {
+        localStorage.setItem("ecg_session", email);
+        showMessage("Login Berhasil! Mengarahkan...", "success");
+        setTimeout(() => { window.location.href = "index.html"; }, 1200);
+      } else {
+        showMessage("Email atau Password salah (Min. 6 Karakter)", "error");
+      }
+    } else {
+      const username = document.getElementById("username").value;
+      if (!username) {
+        showMessage("Username wajib diisi!", "error");
         return;
       }
-
-      if (isLoginMode) {
-        setSession(result.token, result.user);
-        redirectToIndex();
-      } else {
-        showAuthMessage("success", "Akun berhasil didaftarkan! Silakan masuk menggunakan tab Login.");
-        setMode(true);
-        emailInput.value = email;
-        passwordInput.value = "";
-      }
-    } catch (err) {
-      showAuthMessage("error", "Gagal menghubungi server database.");
+      localStorage.setItem("ecg_session", email);
+      showMessage("Registrasi Berhasil! Mengarahkan...", "success");
+      setTimeout(() => { window.location.href = "index.html"; }, 1200);
     }
   });
 }
 
-function initIndexPage() {
-  if (!localStorage.getItem(TOKEN_KEY)) {
-    redirectToDashboardLogin();
-    return;
-  }
-  const user = getSessionUser() || { username: "User" };
-  const welcomeUser = document.getElementById("welcomeUser");
-  const logoutBtn = document.getElementById("logoutBtn");
+// ============================================================================
+// 3. DASHBOARD MAIN CODE (index.html)
+// ============================================================================
+function initDashboardPage() {
+  initCharts();
+  connectMQTT();
 
-  if (welcomeUser) welcomeUser.textContent = "Selamat datang, " + user.username;
-  if (logoutBtn) logoutBtn.addEventListener("click", logout);
+  document.getElementById("logoutBtn").addEventListener("click", () => {
+    localStorage.removeItem("ecg_session");
+    window.location.href = "dashboard.html";
+  });
 
-  initECGDashboard();
+  // Penanganan Tombol Perekaman Data
+  const recordBtn = document.getElementById("recordBtn");
+  const recordStatus = document.getElementById("recordStatus");
+  recordBtn.addEventListener("click", () => {
+    isRecording = !isRecording;
+    if (isRecording) {
+      isRecording = true;
+      recordStatus.innerText = "RECORDING";
+      recordBtn.innerText = "Berhenti Rekam";
+      recordBtn.style.background = "var(--dark)";
+      addLog("Perekaman data ECG dimulai.");
+    } else {
+      isRecording = false;
+      recordStatus.innerText = "Standby";
+      recordBtn.innerText = "Mulai Rekam";
+      recordBtn.style.background = "linear-gradient(135deg, var(--red), var(--red-dark))";
+      addLog(`Perekaman dihentikan. Berhasil mengunci ${recordedData.length} baris data matriks.`);
+    }
+  });
+
+  // Penanganan Ekspor CSV
+  document.getElementById("exportBtn").addEventListener("click", exportToCSV);
 }
 
-function initECGDashboard() {
-  const ctxMain = document.getElementById("ecgChartMain");
-  const ctxAug = document.getElementById("ecgChartAug");
-  const statusBadge = document.getElementById("conn-status");
-  const recordLog = document.getElementById("recordLog");
-  const recordBtn = document.getElementById("recordBtn");
-  const exportBtn = document.getElementById("exportBtn");
-  const recordStatus = document.getElementById("recordStatus");
-  const dataCount = document.getElementById("dataCount");
-  const dataSource = document.getElementById("dataSource");
+// ============================================================================
+// 4. CHART.JS INITIALIZATION
+// ============================================================================
+function initCharts() {
+  const ctxMain = document.getElementById("ecgChartMain").getContext("2d");
+  const ctxAug = document.getElementById("ecgChartAug").getContext("2d");
 
-  if (!ctxMain || !ctxAug || typeof Chart === "undefined") return;
-
-  let isRecording = false;
-  let recordedData = [["Timestamp", "Lead", "Value", "Source"]];
-  let lastLeads = { L1: 0, L2: 0, L3: 0 };
-  let mqttConnected = false;
-  let dummyInterval = null;
-
-  const MAX_DATA_POINTS = 120;
-  const labels = Array(MAX_DATA_POINTS).fill("");
+  // Format array kosong awal untuk sumbu X (Label indeks gerakan)
+  const dummyLabels = Array.from({ length: MAX_CHART_POINTS }, (_, i) => "");
 
   const chartOptions = {
     responsive: true,
     maintainAspectRatio: false,
-    animation: false,
-    interaction: { intersect: false, mode: "index" },
+    animation: false, // Matikan animasi agar rendering data streaming 100Hz lancar & ringan
+    elements: { point: { radius: 0 }, line: { tension: 0.15 } },
     scales: {
-      x: { grid: { display: false }, ticks: { display: false } },
-      y: { suggestedMin: -500, suggestedMax: 2000, grid: { color: "rgba(148, 163, 184, 0.18)" } }
+      x: { display: false },
+      y: { min: 0, max: 4096, grid: { color: "rgba(0, 0, 0, 0.05)" } }
+    },
+    plugins: { legend: { position: "top" } }
+  };
+
+  mainChart = new Chart(ctxMain, {
+    type: "line",
+    data: {
+      labels: dummyLabels,
+      datasets: [
+        { label: "Lead I (Fisik)", data: Array(MAX_CHART_POINTS).fill(2048), borderColor: "#e63946", borderWidth: 2 },
+        { label: "Lead II (Simulasi)", data: Array(MAX_CHART_POINTS).fill(2048), borderColor: "#f9c74f", borderWidth: 2 },
+        { label: "Lead III (Simulasi)", data: Array(MAX_CHART_POINTS).fill(2048), borderColor: "#2a9d8f", borderWidth: 2 }
+      ]
+    },
+    options: chartOptions
+  });
+
+  // Salin opsi modifikasi skala Y khusus Augmented Leads (Sinyal terpusat)
+  const augOptions = JSON.parse(JSON.stringify(chartOptions));
+  augOptions.scales.y.min = -2048;
+  augOptions.scales.y.max = 2048;
+
+  augChart = new Chart(ctxAug, {
+    type: "line",
+    data: {
+      labels: dummyLabels,
+      datasets: [
+        { label: "aVR", data: Array(MAX_CHART_POINTS).fill(0), borderColor: "#2563eb", borderWidth: 1.5 },
+        { label: "aVL", data: Array(MAX_CHART_POINTS).fill(0), borderColor: "#8b5cf6", borderWidth: 1.5 },
+        { label: "aVF", data: Array(MAX_CHART_POINTS).fill(0), borderColor: "#ec4899", borderWidth: 1.5 }
+      ]
+    },
+    options: augOptions
+  });
+}
+
+// ============================================================================
+// 5. MQTT COMMUNICATION via PAHO MQTT
+// ============================================================================
+function connectMQTT() {
+  const statusBadge = document.getElementById("conn-status");
+  const clientId = "Web_Dashboard_" + Math.random().toString(16).substr(2, 8);
+
+  mqttClient = new Paho.MQTT.Client(MQTT_CONFIG.server, Number(MQTT_CONFIG.port), clientId);
+
+  mqttClient.onConnectionLost = (responseObject) => {
+    statusBadge.innerText = "Disconnected";
+    statusBadge.className = "status-badge disconnected";
+    addLog(`[ERROR] Koneksi MQTT Terputus: ${responseObject.errorMessage}. Mencoba menyambung kembali...`);
+    setTimeout(connectMQTT, 5000);
+  };
+
+  mqttClient.onMessageArrived = (message) => {
+    if (message.destinationName === MQTT_CONFIG.topic) {
+      processECGData(parseInt(message.payloadString));
     }
   };
 
-  const ecgChart = new Chart(ctxMain.getContext("2d"), {
-    type: "line",
-    data: {
-      labels,
-      datasets: [
-        { label: "Lead I", data: [], borderColor: "#2563eb", borderWidth: 2, pointRadius: 0, tension: 0.1 },
-        { label: "Lead II", data: [], borderColor: "#2a9d8f", borderWidth: 2, pointRadius: 0, tension: 0.1 },
-        { label: "Lead III", data: [], borderColor: "#f9c74f", borderWidth: 2, pointRadius: 0, tension: 0.1 }
-      ]
+  const connectOptions = {
+    useSSL: true,
+    userName: MQTT_CONFIG.user,
+    password: MQTT_CONFIG.password,
+    onSuccess: () => {
+      statusBadge.innerText = "Connected";
+      statusBadge.className = "status-badge connected";
+      addLog("Berhasil terhubung ke Broker HiveMQ Cloud!");
+      mqttClient.subscribe(MQTT_CONFIG.topic);
+      addLog(`Subscribed ke topik: ${MQTT_CONFIG.topic}`);
     },
-    options: chartOptions
-  });
-
-  const augChart = new Chart(ctxAug.getContext("2d"), {
-    type: "line",
-    data: {
-      labels,
-      datasets: [
-        { label: "aVR", data: [], borderColor: "#e63946", borderWidth: 2, pointRadius: 0, tension: 0.1 },
-        { label: "aVL", data: [], borderColor: "#7c3aed", borderWidth: 2, pointRadius: 0, tension: 0.1 },
-        { label: "aVF", data: [], borderColor: "#14b8a6", borderWidth: 2, pointRadius: 0, tension: 0.1 }
-      ]
-    },
-    options: chartOptions
-  });
-
-  function setConnectionStatus(type, text) {
-    statusBadge.className = "status-badge " + type;
-    statusBadge.textContent = text;
-  }
-
-  function addLog(message) {
-    const p = document.createElement("p");
-    p.textContent = "[" + new Date().toLocaleTimeString() + "] " + message;
-    recordLog.prepend(p);
-  }
-
-  function pushValue(dataset, value) {
-    dataset.data.push(value);
-    if (dataset.data.length > MAX_DATA_POINTS) dataset.data.shift();
-  }
-
-  function updateCharts(l1, l2, l3, source = "MQTT") {
-    lastLeads = { L1: l1, L2: l2, L3: l3 };
-
-    pushValue(ecgChart.data.datasets[0], l1);
-    pushValue(ecgChart.data.datasets[1], l2);
-    pushValue(ecgChart.data.datasets[2], l3);
-
-    const avr = -0.5 * (l1 + l2);
-    const avl = l1 - (0.5 * l2);
-    const avf = l2 - (0.5 * l1);
-
-    pushValue(augChart.data.datasets[0], avr);
-    pushValue(augChart.data.datasets[1], avl);
-    pushValue(augChart.data.datasets[2], avf);
-
-    ecgChart.update("none");
-    augChart.update("none");
-
-    if (isRecording) {
-      const now = new Date().toLocaleTimeString();
-      recordedData.push([now, "Lead I", l1, source]);
-      recordedData.push([now, "Lead II", l2, source]);
-      recordedData.push([now, "Lead III", l3, source]);
-      if (dataCount) dataCount.textContent = String(recordedData.length - 1);
-    }
-  }
-
-  function startDummyStream() {
-    if (!USE_DUMMY_STREAM_WHEN_MQTT_FAILS || dummyInterval) return;
-    let t = 0;
-    setConnectionStatus("demo", "Demo Stream");
-    if (dataSource) dataSource.textContent = "Dummy";
-    addLog("Dashboard menggunakan dummy stream otomatis.");
-
-    dummyInterval = setInterval(() => {
-      t += 0.2;
-      const base = Math.sin(t) * 50;
-      const pqrst = Math.exp(-Math.pow((t % 6) - 2, 2) * 20) * 800; 
-      const l1 = base + pqrst;
-      const l2 = base + pqrst * 1.2;
-      const l3 = l2 - l1;
-      updateCharts(l1, l2, l3, "Dummy");
-    }, 100);
-  }
-
-  function stopDummyStream() {
-    if (dummyInterval) {
-      clearInterval(dummyInterval);
-      dummyInterval = null;
-    }
-  }
-
-  function connectMQTT() {
-    if (typeof Paho === "undefined" || !Paho.MQTT) {
-      addLog("Library Paho MQTT tidak ditemukan. Mengaktifkan dummy stream...");
-      startDummyStream();
-      return;
-    }
-
-    setConnectionStatus("connecting", "Connecting...");
-    addLog("Membuka jabat tangan WebSocket aman ke HiveMQ Cloud...");
-
-    const clientID = "web_monitor_" + Math.random().toString(16).slice(2, 7);
-    const client = new Paho.MQTT.Client(MQTT_CONFIG.broker, Number(MQTT_CONFIG.port), MQTT_CONFIG.path, clientID);
-
-    client.onConnectionLost = event => {
-      mqttConnected = false;
-      setConnectionStatus("disconnected", "Disconnected");
-      addLog("Koneksi terputus: " + (event.errorMessage || "Koneksi Hilang"));
-      startDummyStream();
+    onFailure: (err) => {
+      statusBadge.innerText = "Error Conn";
+      statusBadge.className = "status-badge disconnected";
+      addLog(`[ERROR] Gagal menyambung ke broker MQTT: ${err.errorMessage}`);
       setTimeout(connectMQTT, 5000);
-    };
-
-    client.onMessageArrived = message => {
-      const value = Number(message.payloadString);
-      const topic = message.destinationName;
-      if (isNaN(value)) return;
-
-      if (topic === "esp32/lead1") lastLeads.L1 = value;
-      if (topic === "esp32/lead2") lastLeads.L2 = value;
-      if (topic === "esp32/lead3") lastLeads.L3 = value;
-
-      updateCharts(lastLeads.L1, lastLeads.L2, lastLeads.L3, "MQTT");
-    };
-
-    client.connect({
-      useSSL: MQTT_CONFIG.useSSL,
-      userName: MQTT_CONFIG.username, 
-      password: MQTT_CONFIG.password, 
-      timeout: 10,
-      keepAliveInterval: 30,
-      onSuccess: () => {
-        mqttConnected = true;
-        stopDummyStream();
-        setConnectionStatus("connected", "Connected");
-        if (dataSource) dataSource.textContent = "MQTT Cloud";
-        MQTT_CONFIG.topics.forEach(topic => client.subscribe(topic));
-        addLog("Terhubung ke HiveMQ Cloud! Menunggu aliran data AD8232...");
-      },
-      onFailure: error => {
-        mqttConnected = false;
-        setConnectionStatus("disconnected", "Disconnected");
-        addLog("Koneksi HiveMQ Cloud gagal: " + (error.errorMessage || "Akses ditolak"));
-        startDummyStream();
-        setTimeout(connectMQTT, 5000);
-      }
-    });
-  }
-
-  recordBtn.addEventListener("click", () => {
-    isRecording = !isRecording;
-    if (isRecording) {
-      recordedData = [["Timestamp", "Lead", "Value", "Source"]];
-      recordBtn.textContent = "Berhenti & Simpan";
-      if (recordStatus) recordStatus.textContent = "Recording";
-      addLog("Perekaman gelombang ECG dimulai.");
-    } else {
-      recordBtn.textContent = "Mulai Rekam";
-      if (recordStatus) recordStatus.textContent = "Standby";
-      addLog("Perekaman selesai. Total entri: " + (recordedData.length - 1));
     }
-  });
+  };
 
-  exportBtn.addEventListener("click", () => {
-    if (recordedData.length <= 1) {
-      alert("Belum ada data rekaman!");
-      return;
-    }
-    const csvContent = recordedData.map(row => row.join(",")).join("\n");
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = "ECG_Metrics_Export_" + Date.now() + ".csv";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    addLog("Ekspor file CSV berhasil diunduh.");
-  });
-
-  connectMQTT();
+  mqttClient.connect(connectOptions);
 }
 
-document.addEventListener("DOMContentLoaded", () => {
-  const page = document.body.dataset.page;
-  if (page === "login") initLoginPage();
-  if (page === "index") initIndexPage();
-});
+// ============================================================================
+// 6. REVISI LOGIKA MATEMATIKA KALKULASI MULTI-LEADS (PASCA-PEMROSESAN)
+// ============================================================================
+function processECGData(leadI) {
+  let leadII = 0;
+  let leadIII = 0;
+  let aVR = 0;
+  let aVL = 0;
+  let aVF = 0;
+
+  // JIKA SENSOR LEPAS (Firmware mengirimkan nilai 0)
+  if (leadI <= 0) {
+    // Semua dipaksa flatline pada garis baseline masing-masing
+    leadI = 0;
+    leadII = 0;
+    leadIII = 0;
+    aVR = 0;
+    aVL = 0;
+    aVF = 0;
+  } 
+  // JIKA DATA VALID (Suku sinyal hidup terdeteksi)
+  else {
+    // 1. Ekstrak komponen AC (hilangkan offset tegangan DC 2048 agar gelombang murni di sumbu 0)
+    let leadI_ac = leadI - 2048;
+
+    // 2. SIMULASI MEDIS JANTUNG: Bentuk gelombang Lead II tiruan yang sinkron dengan Lead I.
+    // Kita berikan pengali amplitudo 1.25x dan pergeseran fasa fisiologis menggunakan fungsi waktu linear
+    let waveShift = Math.sin(Date.now() / 140) * 110;
+    let leadII_ac = Math.round(leadI_ac * 1.25 + waveShift);
+
+    // 3. SEGITIGA EINTHOVEN HUKUM ASLI: Lead III = Lead II - Lead I
+    let leadIII_ac = leadII_ac - leadI_ac;
+
+    // Kembalikan ke format biner ADC (Bawa kembali ke offset 2048)
+    leadII = 2048 + leadII_ac;
+    leadIII = 2048 + leadIII_ac;
+
+    // Batasi jangkauan pengaman output grafik agar tidak menembus batas canvas (0 - 4095)
+    leadII = Math.max(0, Math.min(4095, leadII));
+    leadIII = Math.max(0, Math.min(4095, leadIII));
+
+    // 4. PERSAMAAN GOLDBERGER (Hukum Asli Elektroda untuk Augmented Leads)
+    aVR = Math.round(-(leadI_ac + leadII_ac) / 2);
+    aVL = Math.round((leadI_ac - leadIII_ac) / 2);
+    aVF = Math.round((leadII_ac + leadIII_ac) / 2);
+  }
+
+  // --- UPDATE GRAFIK SECARA REAL-TIME ---
+  // Geser Data Grafik Utama (Leads I, II, III)
+  mainChart.data.datasets[0].data.push(leadI);
+  mainChart.data.datasets[1].data.push(leadII);
+  mainChart.data.datasets[2].data.push(leadIII);
+
+  mainChart.data.datasets[0].data.shift();
+  mainChart.data.datasets[1].data.shift();
+  mainChart.data.datasets[2].data.shift();
+  mainChart.update();
+
+  // Geser Data Grafik Kedua (Augmented Leads)
+  augChart.data.datasets[0].data.push(aVR);
+  augChart.data.datasets[1].data.push(aVL);
+  augChart.data.datasets[2].data.push(aVF);
+
+  augChart.data.datasets[0].data.shift();
+  augChart.data.datasets[1].data.shift();
+  augChart.data.datasets[2].data.shift();
+  augChart.update();
+
+  // --- LOGIKA RECORD DATA DAN COUNTER METRIKS ---
+  dataCount++;
+  document.getElementById("dataCount").innerText = dataCount;
+
+  if (isRecording) {
+    const timestampStr = new Date().toLocaleTimeString();
+    recordedData.push({ Timestamp: timestampStr, Lead: "Lead I", Value: leadI, Source: "MQTT" });
+    recordedData.push({ Timestamp: timestampStr, Lead: "Lead II", Value: leadII, Source: "Simulasi" });
+    recordedData.push({ Timestamp: timestampStr, Lead: "Lead III", Value: leadIII, Source: "Simulasi" });
+  }
+}
+
+// ============================================================================
+// 7. EXPORT DATA TO CSV (EXCEL READABLE)
+// ============================================================================
+function exportToCSV() {
+  if (recordedData.length === 0) {
+    alert("Belum ada data yang direkam! Klik tombol 'Mulai Rekam' terlebih dahulu.");
+    return;
+  }
+
+  let csvContent = "data:text/csv;charset=utf-8,Timestamp,Lead,Value,Source\n";
+
+  recordedData.forEach((row) => {
+    csvContent += `${row.Timestamp},${row.Lead},${row.Value},${row.Source}\n`;
+  });
+
+  const encodedUri = encodeURI(csvContent);
+  const downloadAnchor = document.createElement("a");
+  downloadAnchor.setAttribute("href", encodedUri);
+  downloadAnchor.setAttribute("download", `ECG_Metrics_Export_${Date.now()}.csv`);
+  document.body.appendChild(downloadAnchor);
+
+  downloadAnchor.click();
+  document.body.removeChild(downloadAnchor);
+  addLog(`Sukses mengekspor ${recordedData.length} baris ke file Excel CSV.`);
+}
+
+// ============================================================================
+// 8. LOG UTILITY FUNCTION
+// ============================================================================
+function addLog(message) {
+  const logContainer = document.getElementById("recordLog");
+  if (!logContainer) return;
+
+  const time = new Date().toLocaleTimeString();
+  const logElement = document.createElement("p");
+  logElement.innerHTML = `[${time}] ${message}`;
+
+  // Masukkan log baru di bagian paling atas kontainer agar mudah dibaca
+  logContainer.insertBefore(logElement, logContainer.firstChild);
+}
