@@ -7,12 +7,12 @@ const USER_KEY = "ecg_current_user";
 
 // Konfigurasi Kritis Broker HiveMQ Cloud
 const MQTT_CONFIG = {
-  broker: "b12be20128b4431fa7257c750cb205d6.s1.eu.hivemq.cloud", // GANTI dengan Cluster URL HiveMQ Anda
-  port: 8884,                                            // Port Secure WebSocket HiveMQ
+  broker: "b12be20128b4431fa7257c750cb205d6.s1.eu.hivemq.cloud", 
+  port: 8884,                                            // PERBAIKAN: Port Secure WebSocket HiveMQ Cloud Free Tier
   path: "/mqtt",
   useSSL: true,
-  username: "nurrohmanlde1204@gmail.com",                           // GANTI dengan Username dari Access Management HiveMQ
-  password: "k77sKZ4UdY@HLsn",                           // GANTI dengan Password dari Access Management HiveMQ
+  username: "monitoring_ecg",                           // PERBAIKAN: Wajib isi Username dari menu Access Management (Sama dengan ESP32)
+  password: "PasswordEcg123",                           // PERBAIKAN: Wajib isi Password dari menu Access Management (Sama dengan ESP32)
   topics: ["esp32/lead1", "esp32/lead2", "esp32/lead3"]
 };
 
@@ -115,7 +115,6 @@ function initLoginPage() {
     const payload = isLoginMode ? { email, password } : { email, username, password };
 
     try {
-      // Kirim permintaan HTTP POST langsung ke Vercel Serverless Backend API terintegrasi
       const response = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -234,7 +233,6 @@ function initECGDashboard() {
     if (dataset.data.length > MAX_DATA_POINTS) dataset.data.shift();
   }
 
-  // Mengubah parameter update chart agar toleran terhadap pembacaan modular per lead
   function updateCharts(l1, l2, l3, source = "MQTT") {
     lastLeads = { L1: l1, L2: l2, L3: l3 };
 
@@ -242,7 +240,6 @@ function initECGDashboard() {
     pushValue(ecgChart.data.datasets[1], l2);
     pushValue(ecgChart.data.datasets[2], l3);
 
-    // Rumus Einthoven & Goldberger Modifikasi Medis Eksplisit
     const avr = -0.5 * (l1 + l2);
     const avl = l1 - (0.5 * l2);
     const avf = l2 - (0.5 * l1);
@@ -273,7 +270,7 @@ function initECGDashboard() {
     dummyInterval = setInterval(() => {
       t += 0.2;
       const base = Math.sin(t) * 50;
-      const pqrst = Math.exp(-Math.pow((t % 6) - 2, 2) * 20) * 800; // Simulasi kompleks QRS ECG
+      const pqrst = Math.exp(-Math.pow((t % 6) - 2, 2) * 20) * 800; 
       const l1 = base + pqrst;
       const l2 = base + pqrst * 1.2;
       const l3 = l2 - l1;
@@ -323,8 +320,8 @@ function initECGDashboard() {
 
     client.connect({
       useSSL: MQTT_CONFIG.useSSL,
-      userName: MQTT_CONFIG.username,
-      password: MQTT_CONFIG.password,
+      userName: MQTT_CONFIG.username, 
+      password: MQTT_CONFIG.password, 
       timeout: 10,
       keepAliveInterval: 30,
       onSuccess: () => {
