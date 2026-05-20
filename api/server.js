@@ -9,22 +9,7 @@ app.use(express.json());
 app.use(cors());
 
 // Konfigurasi Environment Variables Vercel
-// Ambil variabel lingkungan dari Vercel
-const MONGODB_URI = process.env.MONGODB_URI || "KOSONG";
-
-// KODE BARU: Pelacak Otomatis untuk mencetak apa yang dibaca Vercel di tab Logs
-console.log("===[ DEBUG MONGO ]===");
-console.log("15 Karakter Awal URI:", MONGODB_URI.substring(0, 15));
-console.log("=====================");
-
-if (MONGODB_URI === "KOSONG" || !MONGODB_URI.startsWith("mongodb")) {
-  console.error("CRITICAL ERROR: Teks MONGODB_URI tidak valid atau kosong!");
-}
-
-// Lanjutkan koneksi ke mongoose
-mongoose.connect(MONGODB_URI)
-  .then(() => console.log("MongoDB Connected"))
-  .catch(err => console.error("Koneksi gagal saat runtime:", err.message));
+const MONGODB_URI = "mongodb+srv://luciddream:k77sKZ4Ud@cluster0.huyld4x.mongodb.net/ecg_db?retryWrites=true&w=majority";
 const JWT_SECRET = process.env.JWT_SECRET || "SUPER_RAHASIA_KUNCI_ECG_99";
 
 mongoose.connect(MONGODB_URI)
