@@ -9,7 +9,7 @@ app.use(express.json());
 app.use(cors());
 
 // Konfigurasi Environment Variables Vercel
-const MONGODB_URI = "mongodb+srv://luciddream:k77sKZ4Ud@cluster0.huyld4x.mongodb.net/ecg_db?retryWrites=true&w=majority";
+const MONGODB_URI = "mongodb+srv://ecgadmin:ecgadmin123@cluster0.huyld4x.mongodb.net/ecg_db?retryWrites=true&w=majority";
 const JWT_SECRET = process.env.JWT_SECRET || "SUPER_RAHASIA_KUNCI_ECG_99";
 
 mongoose.connect(MONGODB_URI)
