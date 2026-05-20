@@ -664,3 +664,7 @@ input:focus {
     height: 280px;
   }
 }
+
+.hidden {
+  display: none !important;
+}
