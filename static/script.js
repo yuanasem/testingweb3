@@ -69,53 +69,91 @@ function initLoginPage() {
   const signupTab = document.getElementById("signupTab");
   const usernameGroup = document.getElementById("usernameGroup");
   const demoLoginBtn = document.getElementById("demoLoginBtn");
+  
+  // PERBAIKAN BOTTLENECK 1: Ambil elemen tombol lihat password
+  const togglePassword = document.getElementById("togglePassword"); 
 
   let isLoginMode = true;
 
-  loginTab.addEventListener("click", () => {
-    isLoginMode = true;
-    loginTab.classList.add("active"); signupTab.classList.remove("active");
-    usernameGroup.classList.add("hidden"); authTitle.textContent = "Login Dashboard"; authBtn.textContent = "Masuk ke Index";
-  });
+  // PERBAIKAN BOTTLENECK 1: Kembalikan fungsi lihat/sembunyi password
+  if (togglePassword && passwordInput) {
+    togglePassword.addEventListener("click", () => {
+      const visible = passwordInput.type === "text";
+      passwordInput.type = visible ? "password" : "text";
+      togglePassword.textContent = visible ? "Lihat" : "Sembunyi";
+    });
+  }
 
-  signupTab.addEventListener("click", () => {
-    isLoginMode = false;
-    signupTab.classList.add("active"); loginTab.classList.remove("active");
-    usernameGroup.classList.remove("hidden"); authTitle.textContent = "Sign Up Akun"; authBtn.textContent = "Daftar Akun";
-  });
+  if (loginTab && signupTab && usernameGroup && authTitle && authBtn) {
+    loginTab.addEventListener("click", () => {
+      isLoginMode = true;
+      loginTab.classList.add("active"); signupTab.classList.remove("active");
+      usernameGroup.classList.add("hidden"); authTitle.textContent = "Login Dashboard"; authBtn.textContent = "Masuk ke Index";
+    });
 
-  demoLoginBtn.addEventListener("click", () => {
-    localStorage.setItem(TOKEN_KEY, "demo-token");
-    localStorage.setItem(USER_KEY, JSON.stringify({ username: "Demo Guest", email: "demo@ecg.com", role: "user", pairedDeviceId: "DEMO-DEV" }));
-    window.location.href = "index.html";
-  });
+    signupTab.addEventListener("click", () => {
+      isLoginMode = false;
+      signupTab.classList.add("active"); loginTab.classList.remove("active");
+      usernameGroup.classList.remove("hidden"); authTitle.textContent = "Sign Up Akun"; authBtn.textContent = "Daftar Akun";
+    });
+  }
 
-  authForm.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const endpoint = isLoginMode ? "/api/login" : "/api/signup";
-    const payload = isLoginMode ? 
-      { email: emailInput.value, password: passwordInput.value } : 
-      { username: usernameInput.value, email: emailInput.value, password: passwordInput.value };
+  if (demoLoginBtn) {
+    demoLoginBtn.addEventListener("click", () => {
+      localStorage.setItem(TOKEN_KEY, "demo-token");
+      localStorage.setItem(USER_KEY, JSON.stringify({ username: "Demo Guest", email: "demo@ecg.com", role: "user", pairedDeviceId: "DEMO-DEV" }));
+      window.location.href = "index.html";
+    });
+  }
 
-    try {
-      const res = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-      const data = await res.json();
-      if (!res.ok || !data.success) { alert(data.error || "Gagal autentikasi."); return; }
-
-      if (isLoginMode) {
-        localStorage.setItem(TOKEN_KEY, data.token);
-        localStorage.setItem(USER_KEY, JSON.stringify(data.user));
-        window.location.href = "index.html";
-      } else {
-        alert("Akun sukses didaftarkan! Silakan masuk via tab login.");
-        loginTab.click();
+  if (authForm) {
+    authForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      
+      // Validasi awal sebelum memproses ke Vercel API
+      if (!emailInput.value || !passwordInput.value || (!isLoginMode && !usernameInput.value)) {
+        alert("Semua kolom wajib diisi!");
+        return;
       }
-    } catch (err) { alert("Terjadi gangguan koneksi ke server."); }
-  });
+
+      const endpoint = isLoginMode ? "/api/login" : "/api/signup";
+      const payload = isLoginMode ? 
+        { email: emailInput.value, password: passwordInput.value } : 
+        { username: usernameInput.value, email: emailInput.value, password: passwordInput.value };
+
+      try {
+        authBtn.textContent = "Processing...";
+        authBtn.disabled = true;
+
+        const res = await fetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        
+        if (!res.ok || !data.success) { 
+          alert(data.error || "Gagal memproses ke server database cloud."); 
+          authBtn.textContent = isLoginMode ? "Masuk ke Index" : "Daftar Akun";
+          authBtn.disabled = false;
+          return; 
+        }
+
+        if (isLoginMode) {
+          localStorage.setItem(TOKEN_KEY, data.token);
+          localStorage.setItem(USER_KEY, JSON.stringify(data.user));
+          window.location.href = "index.html";
+        } else {
+          alert("Akun sukses didaftarkan! Silakan masuk via tab login.");
+          window.location.reload(); // Refresh halaman untuk membersihkan sisa form
+        }
+      } catch (err) { 
+        alert("Terjadi gangguan transmisi data. Cek koneksi internet atau status Vercel API Anda."); 
+        authBtn.textContent = isLoginMode ? "Masuk ke Index" : "Daftar Akun";
+        authBtn.disabled = false;
+      }
+    });
+  }
 }
 
 // ==========================================
