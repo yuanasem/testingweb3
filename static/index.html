@@ -3,50 +3,33 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Index - ECG Real-time Dashboard</title>
+  <title>ECG Real-time Dashboard System</title>
   <link rel="stylesheet" href="style.css" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  
   <script src="mqttws31.js"></script>
 </head>
 <body data-page="index">
-  <main class="dashboard-page">
+
+  <main id="user-view" class="dashboard-page hidden">
     <header class="dashboard-header">
       <div class="title-section">
         <div class="brand-logo small">♥</div>
         <div>
           <h2>Index ECG Monitoring</h2>
-          <p id="welcomeUser">Dashboard real-time ECG</p>
+          <p id="welcomeUser">Dashboard Pasien</p>
         </div>
       </div>
-
       <div class="header-actions">
         <span id="conn-status" class="status-badge connecting">Connecting...</span>
-        <button class="btn-outline" id="logoutBtn" type="button">Logout</button>
+        <button class="btn-outline logoutBtn" type="button">Logout</button>
       </div>
     </header>
 
     <section class="summary-grid">
-      <div class="summary-card red-card">
-        <span>Halaman</span>
-        <strong>Index</strong>
-        <p>Halaman utama setelah login.</p>
-      </div>
-      <div class="summary-card yellow-card">
-        <span>Record</span>
-        <strong id="recordStatus">Standby</strong>
-        <p>Status perekaman data ECG.</p>
-      </div>
-      <div class="summary-card green-card">
-        <span>Data Point</span>
-        <strong id="dataCount">0</strong>
-        <p>Total data yang direkam.</p>
-      </div>
-      <div class="summary-card blue-card">
-        <span>Source</span>
-        <strong id="dataSource">MQTT</strong>
-        <p>Sumber data dashboard.</p>
-      </div>
+      <div class="summary-card red-card"><span>Hak Akses</span><strong id="userRole">User</strong><p>Status peran login Anda.</p></div>
+      <div class="summary-card yellow-card"><span>Record</span><strong id="recordStatus">Standby</strong><p>Status perekaman data.</p></div>
+      <div class="summary-card green-card"><span>Data Point</span><strong id="dataCount">0</strong><p>Total entri data.</p></div>
+      <div class="summary-card blue-card"><span>Bound Device ID</span><strong id="boundDevice">None</strong><p>ID ESP32 Terhubung.</p></div>
     </section>
 
     <section class="dashboard-controls">
@@ -56,28 +39,53 @@
 
     <section class="grid-container">
       <article class="card full-width">
-        <div class="card-header">
-          <div>
-            <h3>Live ECG Graph (Lead I)</h3>
-            <span class="info">Data gelombang real-time langsung dari pembacaan sensor AD8232 fisik.</span>
-          </div>
-        </div>
+        <div class="card-header"><h3>Live ECG Graph (Lead I)</h3></div>
+        <div class="chart-wrapper ecg-grid"><canvas id="ecgChartMain"></canvas></div>
+      </article>
+      <article class="card full-width">
+        <div class="card-header"><h3>Log Aktivitas Akun</h3></div>
+        <div id="recordLog" class="log-container"><p>Menunggu koneksi sensor...</p></div>
+      </article>
+    </section>
+  </main>
 
-        <div class="chart-wrapper ecg-grid">
-          <canvas id="ecgChartMain"></canvas>
+  <main id="admin-view" class="dashboard-page hidden">
+    <header class="dashboard-header">
+      <div class="title-section">
+        <div class="brand-logo small" style="background: #7c3aed;">⚙</div>
+        <div>
+          <h2>Admin Control Center</h2>
+          <p>Manajemen Akun, Device Pairing & Live Audit Trail Logs</p>
+        </div>
+      </div>
+      <button class="btn-outline logoutBtn" type="button">Logout Admin</button>
+    </header>
+
+    <section class="grid-container">
+      <article class="card full-width">
+        <div class="card-header"><h3>Live System Audit Logs (Database)</h3></div>
+        <div id="adminLogContainer" class="log-container" style="height: 300px; font-family: monospace;">
+          <p>Mengambil log dari database cloud...</p>
         </div>
       </article>
 
       <article class="card full-width">
-        <div class="card-header">
-          <div>
-            <h3>Log Aktivitas</h3>
-            <span class="info">Riwayat koneksi, rekaman, dan export data sistem.</span>
-          </div>
-        </div>
-
-        <div id="recordLog" class="log-container">
-          <p>Menunggu koneksi sensor...</p>
+        <div class="card-header"><h3>Daftar Pengguna & Tautan Perangkat ESP32</h3></div>
+        <div style="overflow-x: auto; margin-top: 15px;">
+          <table style="width: 100%; border-collapse: collapse; text-align: left;" id="usersTable">
+            <thead>
+              <tr style="background: #1e293b; color: white;">
+                <th style="padding: 12px;">Nama User</th>
+                <th style="padding: 12px;">Email</th>
+                <th style="padding: 12px;">Role</th>
+                <th style="padding: 12px;">Paired Device ID</th>
+                <th style="padding: 12px;">Aksi Kontrol</th>
+              </tr>
+            </thead>
+            <tbody id="usersTableBody">
+              <tr><td colspan="5" style="padding: 15px; text-align: center;">Memuat data user...</td></tr>
+            </tbody>
+          </table>
         </div>
       </article>
     </section>
