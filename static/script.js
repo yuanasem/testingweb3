@@ -1,161 +1,131 @@
-// =====================================================
-// REVISI SINGLE-LEAD MONITORING: HIVEMQ & VERCEL
-// =====================================================
-
 const TOKEN_KEY = "token";
 const USER_KEY = "ecg_current_user";
 
 const MQTT_CONFIG = {
-  broker: "b12be20128b4431fa7257c750cb205d6.s1.eu.hivemq.cloud", 
-  port: 8884,                                            
+  broker: "b12be20128b4431fa7257c750cb205d6.s1.eu.hivemq.cloud",
+  port: 8884,
   path: "/mqtt",
-  useSSL: true,
-  username: "monitoring_ecg",                           
-  password: "PasswordEcg123",                           
-  topics: ["esp32/lead1"] // Hanya mendengarkan topik utama Lead 1 fisik
+  useSSL: true
 };
 
-const USE_DUMMY_STREAM_WHEN_MQTT_FAILS = true;
-
-function setSession(token, user) {
-  localStorage.setItem(TOKEN_KEY, token);
-  localStorage.setItem(USER_KEY, JSON.stringify(user));
+// Log Aktivitas Mandiri ke Database Backend Vercel
+async function pushAuditLog(action, details) {
+  const token = localStorage.getItem(TOKEN_KEY);
+  if (!token) return;
+  try {
+    await fetch("/api/log/activity", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+      body: JSON.stringify({ action, details })
+    });
+  } catch (err) { console.log("Gagal sinkronisasi log cloud."); }
 }
 
-function getSessionUser() {
-  return JSON.parse(localStorage.getItem(USER_KEY) || "null");
-}
+// ==========================================
+// CONTROL UTAMA: ROUTING DINAMIS SATU FILE
+// ==========================================
+document.addEventListener("DOMContentLoaded", () => {
+  const page = document.body.dataset.page;
+  const token = localStorage.getItem(TOKEN_KEY);
+  const user = JSON.parse(localStorage.getItem(USER_KEY) || "null");
 
-function logout() {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(USER_KEY);
-  window.location.href = "dashboard.html";
-}
-
-function redirectToIndex() {
-  window.location.href = "index.html";
-}
-
-function redirectToDashboardLogin() {
-  window.location.href = "dashboard.html";
-}
-
-function showAuthMessage(type, message) {
-  const box = document.getElementById("authMessage");
-  if (!box) return;
-  box.className = "auth-message show " + type;
-  box.textContent = message;
-}
-
-function initLoginPage() {
-  if (localStorage.getItem(TOKEN_KEY)) {
-    redirectToIndex();
-    return;
+  if (page === "login") {
+    if (token && user) {
+      window.location.href = "index.html"; // Semua lari ke satu file index.html
+    } else { initLoginPage(); }
+  } else if (page === "index") {
+    if (!token || !user) { 
+      window.location.href = "dashboard.html"; 
+      return; 
+    }
+    
+    // EKSEKUSI PEMILAHAN VIEW BERDASARKAN ROLE
+    if (user.role === "admin") {
+      document.getElementById("admin-view").classList.remove("hidden");
+      initAdminPage(token, user);
+    } else {
+      document.getElementById("user-view").classList.remove("hidden");
+      initIndexPage(token, user);
+    }
   }
+});
 
+// ==========================================
+// 1. HALAMAN LOGIN & DAFTAR (dashboard.html)
+// ==========================================
+function initLoginPage() {
   const authForm = document.getElementById("authForm");
+  const emailInput = document.getElementById("email");
+  const passwordInput = document.getElementById("password");
+  const usernameInput = document.getElementById("username");
   const authTitle = document.getElementById("authTitle");
   const authBtn = document.getElementById("authBtn");
   const loginTab = document.getElementById("loginTab");
   const signupTab = document.getElementById("signupTab");
   const usernameGroup = document.getElementById("usernameGroup");
-  const usernameInput = document.getElementById("username");
-  const emailInput = document.getElementById("email");
-  const passwordInput = document.getElementById("password");
-  const togglePassword = document.getElementById("togglePassword");
   const demoLoginBtn = document.getElementById("demoLoginBtn");
 
   let isLoginMode = true;
 
-  emailInput.value = "";
-  passwordInput.value = "";
+  loginTab.addEventListener("click", () => {
+    isLoginMode = true;
+    loginTab.classList.add("active"); signupTab.classList.remove("active");
+    usernameGroup.classList.add("hidden"); authTitle.textContent = "Login Dashboard"; authBtn.textContent = "Masuk ke Index";
+  });
 
-  function setMode(loginMode) {
-    isLoginMode = loginMode;
-    loginTab.classList.toggle("active", isLoginMode);
-    signupTab.classList.toggle("active", !isLoginMode);
-    usernameGroup.classList.toggle("hidden", isLoginMode);
-    authTitle.textContent = isLoginMode ? "Login Dashboard" : "Sign Up Akun";
-    authBtn.textContent = isLoginMode ? "Masuk ke Index" : "Daftar Akun";
-  }
-
-  loginTab.addEventListener("click", () => setMode(true));
-  signupTab.addEventListener("click", () => setMode(false));
-
-  togglePassword.addEventListener("click", () => {
-    const visible = passwordInput.type === "text";
-    passwordInput.type = visible ? "password" : "text";
-    togglePassword.textContent = visible ? "Lihat" : "Sembunyi";
+  signupTab.addEventListener("click", () => {
+    isLoginMode = false;
+    signupTab.classList.add("active"); loginTab.classList.remove("active");
+    usernameGroup.classList.remove("hidden"); authTitle.textContent = "Sign Up Akun"; authBtn.textContent = "Daftar Akun";
   });
 
   demoLoginBtn.addEventListener("click", () => {
-    setSession("demo-token", { username: "Demo Guest", email: "demo@ecg.com" });
-    redirectToIndex();
+    localStorage.setItem(TOKEN_KEY, "demo-token");
+    localStorage.setItem(USER_KEY, JSON.stringify({ username: "Demo Guest", email: "demo@ecg.com", role: "user", pairedDeviceId: "DEMO-DEV" }));
+    window.location.href = "index.html";
   });
 
-  authForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const email = emailInput.value.trim().toLowerCase();
-    const password = passwordInput.value;
-    const username = usernameInput.value.trim();
-
-    if (!email || !password) {
-      showAuthMessage("error", "Email dan password wajib diisi.");
-      return;
-    }
-    if (password.length < 6) {
-      showAuthMessage("error", "Password minimal 6 karakter.");
-      return;
-    }
-
+  authForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
     const endpoint = isLoginMode ? "/api/login" : "/api/signup";
-    const payload = isLoginMode ? { email, password } : { email, username, password };
+    const payload = isLoginMode ? 
+      { email: emailInput.value, password: passwordInput.value } : 
+      { username: usernameInput.value, email: emailInput.value, password: passwordInput.value };
 
     try {
-      const response = await fetch(endpoint, {
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
-
-      const result = await response.json();
-
-      if (!response.ok || !result.success) {
-        showAuthMessage("error", result.error || "Terjadi kesalahan transmisi data.");
-        return;
-      }
+      const data = await res.json();
+      if (!res.ok || !data.success) { alert(data.error || "Gagal autentikasi."); return; }
 
       if (isLoginMode) {
-        setSession(result.token, result.user);
-        redirectToIndex();
+        localStorage.setItem(TOKEN_KEY, data.token);
+        localStorage.setItem(USER_KEY, JSON.stringify(data.user));
+        window.location.href = "index.html";
       } else {
-        showAuthMessage("success", "Akun berhasil didaftarkan! Silakan masuk menggunakan tab Login.");
-        setMode(true);
-        emailInput.value = email;
-        passwordInput.value = "";
+        alert("Akun sukses didaftarkan! Silakan masuk via tab login.");
+        loginTab.click();
       }
-    } catch (err) {
-      showAuthMessage("error", "Gagal menghubungi server database.");
-    }
+    } catch (err) { alert("Terjadi gangguan koneksi ke server."); }
   });
 }
 
-function initIndexPage() {
-  if (!localStorage.getItem(TOKEN_KEY)) {
-    redirectToDashboardLogin();
-    return;
-  }
-  const user = getSessionUser() || { username: "User" };
-  const welcomeUser = document.getElementById("welcomeUser");
-  const logoutBtn = document.getElementById("logoutBtn");
+// ==========================================
+// 2. LOGIKA VIEW: DASHBOARD PASIEN
+// ==========================================
+function initIndexPage(token, user) {
+  document.getElementById("welcomeUser").textContent = "Selamat datang, " + user.username;
+  document.getElementById("userRole").textContent = user.role.toUpperCase();
+  document.getElementById("boundDevice").textContent = user.pairedDeviceId || "None (Unpaired)";
+  
+  document.querySelector("#user-view .logoutBtn").addEventListener("click", async () => {
+    await pushAuditLog('LOGOUT', `${user.username} keluar dari sistem website.`);
+    localStorage.clear(); window.location.href = "dashboard.html";
+  });
 
-  if (welcomeUser) welcomeUser.textContent = "Selamat datang, " + user.username;
-  if (logoutBtn) logoutBtn.addEventListener("click", logout);
-
-  initECGDashboard();
-}
-
-function initECGDashboard() {
   const ctxMain = document.getElementById("ecgChartMain");
   const statusBadge = document.getElementById("conn-status");
   const recordLog = document.getElementById("recordLog");
@@ -163,171 +133,160 @@ function initECGDashboard() {
   const exportBtn = document.getElementById("exportBtn");
   const recordStatus = document.getElementById("recordStatus");
   const dataCount = document.getElementById("dataCount");
-  const dataSource = document.getElementById("dataSource");
-
-  if (!ctxMain || typeof Chart === "undefined") return;
 
   let isRecording = false;
-  let recordedData = [["Timestamp", "Value", "Source"]];
-  let mqttConnected = false;
+  let recordedData = [["Timestamp", "ECG Value"]];
   let dummyInterval = null;
-
-  const MAX_DATA_POINTS = 150; // Sedikit dinaikkan agar visualisasi komponen QRS lebih lega
-  const labels = Array(MAX_DATA_POINTS).fill("");
-
-  const chartOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    animation: false,
-    scales: {
-      x: { grid: { display: false }, ticks: { display: false } },
-      y: { suggestedMin: -200, suggestedMax: 3000, grid: { color: "rgba(230, 57, 70, 0.15)" } }
-    }
-  };
+  const MAX_POINTS = 150;
 
   const ecgChart = new Chart(ctxMain.getContext("2d"), {
     type: "line",
-    data: {
-      labels,
-      datasets: [
-        { label: "Lead I (Fisik)", data: [], borderColor: "#e63946", borderWidth: 2.5, pointRadius: 0, tension: 0.1 }
-      ]
-    },
-    options: chartOptions
+    data: { labels: Array(MAX_POINTS).fill(""), datasets: [{ label: "Lead I (Fisik)", data: [], borderColor: "#e63946", borderWidth: 2, pointRadius: 0, tension: 0.1 }] },
+    options: { responsive: true, maintainAspectRatio: false, animation: false, scales: { x: { display: false }, y: { suggestedMin: -200, suggestedMax: 3000 } } }
   });
 
-  function setConnectionStatus(type, text) {
-    statusBadge.className = "status-badge " + type;
-    statusBadge.textContent = text;
-  }
-
-  function addLog(message) {
-    const p = document.createElement("p");
-    p.textContent = "[" + new Date().toLocaleTimeString() + "] " + message;
+  function addLog(msg) {
+    const p = document.createElement("p"); p.textContent = "[" + new Date().toLocaleTimeString() + "] " + msg;
     recordLog.prepend(p);
   }
 
-  function pushValue(dataset, value) {
-    dataset.data.push(value);
-    if (dataset.data.length > MAX_DATA_POINTS) dataset.data.shift();
-  }
-
-  function updateCharts(l1, source = "MQTT") {
-    pushValue(ecgChart.data.datasets[0], l1);
+  function updateDataGrid(value, source) {
+    ecgChart.data.datasets[0].data.push(value);
+    if (ecgChart.data.datasets[0].data.length > MAX_POINTS) ecgChart.data.datasets[0].data.shift();
     ecgChart.update("none");
 
     if (isRecording) {
-      const now = new Date().toLocaleTimeString();
-      recordedData.push([now, l1, source]);
-      if (dataCount) dataCount.textContent = String(recordedData.length - 1);
+      recordedData.push([new Date().toLocaleTimeString(), value]);
+      dataCount.textContent = String(recordedData.length - 1);
     }
   }
 
-  function startDummyStream() {
-    if (!USE_DUMMY_STREAM_WHEN_MQTT_FAILS || dummyInterval) return;
+  function startDummy() {
+    if (dummyInterval) return;
+    statusBadge.className = "status-badge demo"; statusBadge.textContent = "Demo Mode";
+    addLog("Mengaktifkan dummy stream (Gagal membaca Device ID).");
     let t = 0;
-    setConnectionStatus("demo", "Demo Stream");
-    if (dataSource) dataSource.textContent = "Dummy";
-    addLog("Dashboard menggunakan dummy stream otomatis.");
-
     dummyInterval = setInterval(() => {
       t += 0.2;
-      const base = 1000 + Math.sin(t) * 30; // Menggeser baseline ke area tengah ADC
-      const pqrst = Math.exp(-Math.pow((t % 6) - 2, 2) * 20) * 1200; 
-      const l1 = base + pqrst;
-      updateCharts(l1, "Dummy");
+      const val = 1000 + Math.sin(t)*30 + (Math.exp(-Math.pow((t % 6) - 2, 2) * 20) * 1200);
+      updateDataGrid(val, "Dummy");
     }, 60);
   }
 
-  function stopDummyStream() {
-    if (dummyInterval) {
-      clearInterval(dummyInterval);
-      dummyInterval = null;
-    }
-  }
-
-  function connectMQTT() {
-    setConnectionStatus("connecting", "Connecting...");
-    addLog("Membuka jabat tangan WebSocket aman ke HiveMQ Cloud...");
-
-    const clientID = "web_monitor_" + Math.random().toString(16).slice(2, 7);
+  if (!user.pairedDeviceId) { startDummy(); } 
+  else {
+    statusBadge.className = "status-badge connecting"; statusBadge.textContent = "Connecting...";
+    const clientID = "web_user_" + Math.random().toString(16).slice(2, 6);
     const client = new Paho.MQTT.Client(MQTT_CONFIG.broker, Number(MQTT_CONFIG.port), MQTT_CONFIG.path, clientID);
 
-    client.onConnectionLost = event => {
-      mqttConnected = false;
-      setConnectionStatus("disconnected", "Disconnected");
-      addLog("Koneksi terputus: " + (event.errorMessage || "Koneksi Hilang"));
-      startDummyStream();
-      setTimeout(connectMQTT, 5000);
+    client.onConnectionLost = () => {
+      statusBadge.className = "status-badge disconnected"; statusBadge.textContent = "Disconnected";
+      startDummy();
     };
 
-    client.onMessageArrived = message => {
-      const value = Number(message.payloadString);
-      if (isNaN(value)) return;
-      updateCharts(value, "MQTT");
+    client.onMessageArrived = (msg) => {
+      const val = Number(msg.payloadString);
+      if (!isNaN(val)) updateDataGrid(val, "MQTT");
     };
 
     client.connect({
-      useSSL: MQTT_CONFIG.useSSL,
-      userName: MQTT_CONFIG.username, 
-      password: MQTT_CONFIG.password, 
-      timeout: 10,
-      keepAliveInterval: 30,
+      useSSL: true, userName: "monitoring_ecg", password: "PasswordEcg123", timeout: 10,
       onSuccess: () => {
-        mqttConnected = true;
-        stopDummyStream();
-        setConnectionStatus("connected", "Connected");
-        if (dataSource) dataSource.textContent = "MQTT Cloud";
-        MQTT_CONFIG.topics.forEach(topic => client.subscribe(topic));
-        addLog("Terhubung ke HiveMQ Cloud! Menunggu aliran data AD8232...");
+        if (dummyInterval) { clearInterval(dummyInterval); dummyInterval = null; }
+        statusBadge.className = "status-badge connected"; statusBadge.textContent = "Connected";
+        const topicTarget = `esp32/${user.pairedDeviceId}/lead1`;
+        client.subscribe(topicTarget);
+        addLog(`Sukses tersambung ke perangkat via topik: ${topicTarget}`);
+        pushAuditLog('STORING_DATA', `${user.username} mulai melakukan visualisasi data dari device ID: ${user.pairedDeviceId}`);
       },
-      onFailure: error => {
-        mqttConnected = false;
-        setConnectionStatus("disconnected", "Disconnected");
-        addLog("Koneksi HiveMQ Cloud gagal: " + (error.errorMessage || "Akses ditolak"));
-        startDummyStream();
-        setTimeout(connectMQTT, 5000);
-      }
+      onFailure: () => { startDummy(); }
     });
   }
 
   recordBtn.addEventListener("click", () => {
     isRecording = !isRecording;
     if (isRecording) {
-      recordedData = [["Timestamp", "Value", "Source"]];
-      recordBtn.textContent = "Berhenti & Simpan";
-      if (recordStatus) recordStatus.textContent = "Recording";
-      addLog("Perekaman gelombang ECG dimulai.");
+      recordedData = [["Timestamp", "ECG Value"]]; recordBtn.textContent = "Berhenti & Simpan";
+      recordStatus.textContent = "Recording"; addLog("Perekaman dimulai.");
     } else {
-      recordBtn.textContent = "Mulai Rekam";
-      if (recordStatus) recordStatus.textContent = "Standby";
+      recordBtn.textContent = "Mulai Rekam"; recordStatus.textContent = "Standby";
       addLog("Perekaman selesai. Total entri: " + (recordedData.length - 1));
     }
   });
 
   exportBtn.addEventListener("click", () => {
-    if (recordedData.length <= 1) {
-      alert("Belum ada data rekaman!");
-      return;
-    }
+    if (recordedData.length <= 1) { alert("Belum ada data rekaman!"); return; }
     const csvContent = recordedData.map(row => row.join(",")).join("\n");
     const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.href = url;
-    link.download = "ECG_Metrics_Export_" + Date.now() + ".csv";
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
-    addLog("Ekspor file CSV berhasil diunduh.");
+    link.href = url; link.download = `ECG_Data_${user.username}_${Date.now()}.csv`;
+    link.click(); URL.revokeObjectURL(url);
+    addLog("File rekaman CSV berhasil diunduh.");
+    pushAuditLog('DOWNLOAD_DATA', `${user.username} mengunduh data rekaman medis (CSV) ke penyimpanan lokal.`);
   });
-
-  connectMQTT();
 }
 
-document.addEventListener("DOMContentLoaded", () => {
-  const page = document.body.dataset.page;
-  if (page === "login") initLoginPage();
-  if (page === "index") initIndexPage();
-});
+// ==========================================
+// 3. LOGIKA VIEW: PANEL KONTROL ADMIN
+// ==========================================
+function initAdminPage(token, user) {
+  document.querySelector("#admin-view .logoutBtn").addEventListener("click", () => {
+    localStorage.clear(); window.location.href = "dashboard.html";
+  });
+
+  async function loadAdminLogs() {
+    try {
+      const res = await fetch("/api/admin/logs", { headers: { "Authorization": `Bearer ${token}` } });
+      const data = await res.json();
+      const container = document.getElementById("adminLogContainer");
+      if (data.success && data.logs.length > 0) {
+        container.innerHTML = data.logs.map(log => {
+          let badgeColor = log.action === 'LOGIN' ? '#22c55e' : log.action === 'DOWNLOAD_DATA' ? '#eab308' : '#38bdf8';
+          return `<p style="margin-bottom:8px; border-bottom:1px solid #334155; padding-bottom:4px;">
+            <span style="color:#94a3b8">[${new Date(log.timestamp).toLocaleTimeString()}]</span> 
+            <b style="color:${badgeColor}">[${log.action}]</b> 
+            <span style="color:#f8fafc">${log.details}</span> 
+            <i style="color:#64748b; font-size:11px;">(${log.email})</i>
+          </p>`;
+        }).join("");
+      } else { container.innerHTML = "<p>Belum ada rekaman log aktivitas hari ini.</p>"; }
+    } catch (err) { console.log("Gagal memuat log."); }
+  }
+
+  async function loadUsersGrid() {
+    try {
+      const res = await fetch("/api/admin/users", { headers: { "Authorization": `Bearer ${token}` } });
+      const data = await res.json();
+      const tbody = document.getElementById("usersTableBody");
+      if (data.success && data.users.length > 0) {
+        tbody.innerHTML = data.users.map(u => {
+          if (u.role === 'admin') return ''; 
+          return `<tr style="border-bottom: 1px solid #cbd5e1;">
+            <td style="padding:12px;"><b>${u.username}</b></td>
+            <td style="padding:12px;">${u.email}</td>
+            <td style="padding:12px;"><span class="status-badge connected" style="background:#64748b;">${u.role.toUpperCase()}</span></td>
+            <td style="padding:12px;"><input type="text" id="dev_${u._id}" value="${u.pairedDeviceId || ''}" placeholder="Contoh: ESP32-DEV-01" style="padding:6px; border:1px solid #94a3b8; border-radius:4px; font-weight:bold;"></td>
+            <td style="padding:12px;"><button onclick="savePairing('${u._id}')" class="btn-record" style="padding:6px 12px; font-size:12px; background:#7c3aed;">Update Link</button></td>
+          </tr>`;
+        }).join("");
+      }
+    } catch (err) { console.log("Gagal memuat grid user."); }
+  }
+
+  window.savePairing = async function(userId) {
+    const deviceIdValue = document.getElementById(`dev_${userId}`).value.trim();
+    try {
+      const res = await fetch("/api/admin/pair-device", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ userId, deviceId: deviceIdValue })
+      });
+      const data = await res.json();
+      if (data.success) { alert("Tautan Device ID berhasil diupdate!"); loadUsersGrid(); loadAdminLogs(); }
+    } catch (err) { alert("Gagal memperbarui tautan perangkat."); }
+  };
+
+  loadAdminLogs(); loadUsersGrid();
+  setInterval(loadAdminLogs, 10000);
+}
