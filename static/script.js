@@ -1,3 +1,7 @@
+// =====================================================
+// REVISI TOTAL KONEKTIVITAS & BYPASS BLOCKING LOGOUT
+// =====================================================
+
 const TOKEN_KEY = "token";
 const USER_KEY = "ecg_current_user";
 
@@ -8,10 +12,11 @@ const MQTT_CONFIG = {
   useSSL: true
 };
 
-// Log Aktivitas Mandiri ke Database Backend Vercel
+// Fungsi Log Aktivitas Mandiri ke Database Backend Vercel
 async function pushAuditLog(action, details) {
   const token = localStorage.getItem(TOKEN_KEY);
-  if (!token) return;
+  // OPTIMASI: Langsung abaikan jika tidak ada token atau jika menggunakan akun demo
+  if (!token || token === "demo-token") return; 
   try {
     await fetch("/api/log/activity", {
       method: "POST",
@@ -31,7 +36,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
   if (page === "login") {
     if (token && user) {
-      window.location.href = "index.html"; // Semua lari ke satu file index.html
+      window.location.href = "index.html"; 
     } else { initLoginPage(); }
   } else if (page === "index") {
     if (!token || !user) { 
@@ -121,9 +126,11 @@ function initIndexPage(token, user) {
   document.getElementById("userRole").textContent = user.role.toUpperCase();
   document.getElementById("boundDevice").textContent = user.pairedDeviceId || "None (Unpaired)";
   
-  document.querySelector("#user-view .logoutBtn").addEventListener("click", async () => {
-    await pushAuditLog('LOGOUT', `${user.username} keluar dari sistem website.`);
-    localStorage.clear(); window.location.href = "dashboard.html";
+  // REVISI KRUSIAL: Menghapus await agar eksekusi pembersihan sesi bersifat instan (anti-freeze)
+  document.querySelector("#user-view .logoutBtn").addEventListener("click", () => {
+    pushAuditLog('LOGOUT', `${user.username} keluar dari sistem website.`);
+    localStorage.clear(); 
+    window.location.href = "dashboard.html";
   });
 
   const ctxMain = document.getElementById("ecgChartMain");
@@ -173,7 +180,7 @@ function initIndexPage(token, user) {
     }, 60);
   }
 
-  if (!user.pairedDeviceId) { startDummy(); } 
+  if (!user.pairedDeviceId || user.pairedDeviceId === "DEMO-DEV") { startDummy(); } 
   else {
     statusBadge.className = "status-badge connecting"; statusBadge.textContent = "Connecting...";
     const clientID = "web_user_" + Math.random().toString(16).slice(2, 6);
@@ -231,8 +238,10 @@ function initIndexPage(token, user) {
 // 3. LOGIKA VIEW: PANEL KONTROL ADMIN
 // ==========================================
 function initAdminPage(token, user) {
+  // REVISI KRUSIAL: Menghapus await pada tombol logout admin agar pembersihan instan
   document.querySelector("#admin-view .logoutBtn").addEventListener("click", () => {
-    localStorage.clear(); window.location.href = "dashboard.html";
+    localStorage.clear(); 
+    window.location.href = "dashboard.html";
   });
 
   async function loadAdminLogs() {
