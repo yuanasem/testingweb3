@@ -15,7 +15,6 @@ const MQTT_CONFIG = {
 // Fungsi Log Aktivitas Mandiri ke Database Backend Vercel
 async function pushAuditLog(action, details) {
   const token = localStorage.getItem(TOKEN_KEY);
-  // OPTIMASI: Langsung abaikan jika tidak ada token atau jika menggunakan akun demo
   if (!token || token === "demo-token") return; 
   try {
     await fetch("/api/log/activity", {
@@ -44,7 +43,6 @@ document.addEventListener("DOMContentLoaded", () => {
       return; 
     }
     
-    // EKSEKUSI PEMILAHAN VIEW BERDASARKAN ROLE
     if (user.role === "admin") {
       document.getElementById("admin-view").classList.remove("hidden");
       initAdminPage(token, user);
@@ -69,13 +67,10 @@ function initLoginPage() {
   const signupTab = document.getElementById("signupTab");
   const usernameGroup = document.getElementById("usernameGroup");
   const demoLoginBtn = document.getElementById("demoLoginBtn");
-  
-  // PERBAIKAN BOTTLENECK 1: Ambil elemen tombol lihat password
   const togglePassword = document.getElementById("togglePassword"); 
 
   let isLoginMode = true;
 
-  // PERBAIKAN BOTTLENECK 1: Kembalikan fungsi lihat/sembunyi password
   if (togglePassword && passwordInput) {
     togglePassword.addEventListener("click", () => {
       const visible = passwordInput.type === "text";
@@ -109,8 +104,6 @@ function initLoginPage() {
   if (authForm) {
     authForm.addEventListener("submit", async (e) => {
       e.preventDefault();
-      
-      // Validasi awal sebelum memproses ke Vercel API
       if (!emailInput.value || !passwordInput.value || (!isLoginMode && !usernameInput.value)) {
         alert("Semua kolom wajib diisi!");
         return;
@@ -145,7 +138,7 @@ function initLoginPage() {
           window.location.href = "index.html";
         } else {
           alert("Akun sukses didaftarkan! Silakan masuk via tab login.");
-          window.location.reload(); // Refresh halaman untuk membersihkan sisa form
+          window.location.reload();
         }
       } catch (err) { 
         alert("Terjadi gangguan transmisi data. Cek koneksi internet atau status Vercel API Anda."); 
@@ -164,7 +157,6 @@ function initIndexPage(token, user) {
   document.getElementById("userRole").textContent = user.role.toUpperCase();
   document.getElementById("boundDevice").textContent = user.pairedDeviceId || "None (Unpaired)";
   
-  // REVISI KRUSIAL: Menghapus await agar eksekusi pembersihan sesi bersifat instan (anti-freeze)
   document.querySelector("#user-view .logoutBtn").addEventListener("click", () => {
     pushAuditLog('LOGOUT', `${user.username} keluar dari sistem website.`);
     localStorage.clear(); 
@@ -213,13 +205,19 @@ function initIndexPage(token, user) {
     let t = 0;
     dummyInterval = setInterval(() => {
       t += 0.2;
+      // Simulasi gelombang ECG dummy
       const val = 1000 + Math.sin(t)*30 + (Math.exp(-Math.pow((t % 6) - 2, 2) * 20) * 1200);
       updateDataGrid(val, "Dummy");
+      
+      // Catatan: Nilai puncak dummy max hanya berkisar ~2230, jika ingin menguji BPM di Demo Mode,
+      // Anda bisa menurunkan sementara ECG_THRESHOLD ke 2100.
+      calculateBPM(val); 
     }, 60);
   }
 
-  if (!user.pairedDeviceId || user.pairedDeviceId === "DEMO-DEV") { startDummy(); } 
-  else {
+  if (!user.pairedDeviceId || user.pairedDeviceId === "DEMO-DEV") { 
+    startDummy(); 
+  } else {
     statusBadge.className = "status-badge connecting"; statusBadge.textContent = "Connecting...";
     const clientID = "web_user_" + Math.random().toString(16).slice(2, 6);
     const client = new Paho.MQTT.Client(MQTT_CONFIG.broker, Number(MQTT_CONFIG.port), MQTT_CONFIG.path, clientID);
@@ -229,9 +227,13 @@ function initIndexPage(token, user) {
       startDummy();
     };
 
+    // STRUKTUR DISINI SUDAH DIPERBAIKI TOTAL
     client.onMessageArrived = (msg) => {
-      const val = Number(msg.payloadString);
-      if (!isNaN(val)) updateDataGrid(val, "MQTT");
+      const rawEcgValue = parseInt(msg.payloadString);
+      if (!isNaN(rawEcgValue)) {
+        updateDataGrid(rawEcgValue, "MQTT");
+        calculateBPM(rawEcgValue); // Panggilan fungsi perhitungan BPM Real-Time
+      }
     };
 
     client.connect({
@@ -272,11 +274,48 @@ function initIndexPage(token, user) {
   });
 }
 
+// =====================================================
+// KONFIGURASI & VARIABEL LIVE BPM DETECTION (GLOBAL)
+// =====================================================
+const ECG_THRESHOLD = 2300;       // Ambang batas puncak R (sesuai data sensor AD8232 Anda)
+const REFRACTORY_PERIOD = 300;    // Jeda minimal antar detak (300ms)
+let lastPeakTime = 0;             
+let bpmBuffer = [];               
+
+function calculateBPM(ecgValue) {
+  const currentTime = Date.now();
+
+  if (ecgValue > ECG_THRESHOLD) {
+    if (currentTime - lastPeakTime > REFRACTORY_PERIOD) {
+      if (lastPeakTime !== 0) {
+        const rrInterval = currentTime - lastPeakTime; 
+        const rawBPM = Math.round(60000 / rrInterval);
+
+        if (rawBPM >= 45 && rawBPM <= 180) {
+          bpmBuffer.push(rawBPM);
+          if (bpmBuffer.length > 5) {
+            bpmBuffer.shift();
+          }
+          const averageBPM = Math.round(bpmBuffer.reduce((a, b) => a + b, 0) / bpmBuffer.length);
+          renderBPMToWeb(averageBPM);
+        }
+      }
+      lastPeakTime = currentTime;
+    }
+  }
+}
+
+function renderBPMToWeb(bpmValue) {
+  const bpmElement = document.getElementById("bpmDisplay");
+  if (bpmElement) {
+    bpmElement.innerText = `${bpmValue} BPM`;
+  }
+}
+
 // ==========================================
 // 3. LOGIKA VIEW: PANEL KONTROL ADMIN
 // ==========================================
 function initAdminPage(token, user) {
-  // REVISI KRUSIAL: Menghapus await pada tombol logout admin agar pembersihan instan
   document.querySelector("#admin-view .logoutBtn").addEventListener("click", () => {
     localStorage.clear(); 
     window.location.href = "dashboard.html";
